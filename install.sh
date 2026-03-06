@@ -202,21 +202,64 @@ get_payload_root() {
 find_executable() {
   local root="$1"
   local candidate
-  local candidates=(
+  local -a preferred_candidates=(
+    "$root/MuxSwarm"
     "$root/Mux-Swarm"
     "$root/mux-swarm"
     "$root/Qwe"
     "$root/qwe"
   )
+  local -a matches=()
+  local path name lower score best_score=-1 best_match=""
 
-  for candidate in "${candidates[@]}"; do
+  for candidate in "${preferred_candidates[@]}"; do
     if [[ -f "$candidate" ]]; then
       printf '%s\n' "$candidate"
       return
     fi
   done
 
-  find "$root" -type f \( -name 'Mux-Swarm' -o -name 'mux-swarm' -o -name 'Qwe' -o -name 'qwe' \) | sort | head -n 1 || true
+  while IFS= read -r -d '' path; do
+    [[ -f "$path" ]] || continue
+    [[ -x "$path" ]] || continue
+
+    name="$(basename "$path")"
+    lower="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')"
+
+    case "$lower" in
+      *.dll|*.dylib|*.so|*.a|*.o|*.pdb|*.json|*.txt|*.md|*.yml|*.yaml|*.toml|*.xml|*.sh|*.ps1|*.bat|*.cmd|*.exe.config)
+        continue
+        ;;
+    esac
+
+    if [[ "$path" == *"/Runtime/"* || "$path" == *"/Sessions/"* || "$path" == *"/Skills/"* || "$path" == *"/Prompts/"* || "$path" == *"/Configs/"* ]]; then
+      continue
+    fi
+
+    score=0
+    [[ "$path" == "$root/"* ]] && score=$((score + 5))
+    [[ "$lower" == *mux* ]] && score=$((score + 20))
+    [[ "$lower" == *swarm* ]] && score=$((score + 20))
+    [[ "$lower" == qwe* ]] && score=$((score + 8))
+    [[ "$lower" != *.* ]] && score=$((score + 5))
+    [[ "$path" == "$root/publish/"* ]] && score=$((score + 10))
+
+    if (( score > best_score )); then
+      best_score=$score
+      best_match="$path"
+    fi
+
+    matches+=("$path")
+  done < <(find "$root" -type f -perm -111 -print0 2>/dev/null)
+
+  if [[ -n "$best_match" ]]; then
+    printf '%s\n' "$best_match"
+    return
+  fi
+
+  if [[ ${#matches[@]} -gt 0 ]]; then
+    printf '%s\n' "${matches[0]}"
+  fi
 }
 
 remove_install_payload_but_preserve_data() {
